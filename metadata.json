@@ -1,0 +1,6 @@
+{
+  "name": "Gemini Image-to-Image Studio",
+  "description": "Image-to-image generation and transformation studio powered by Google Gemini models with style transfer, vision analysis, and prompt remixing.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
