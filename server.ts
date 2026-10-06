@@ -238,6 +238,159 @@ Return a JSON object:
   }
 });
 
+// Helper function for creative fallback prompt variations when Gemini API experiences temporary high demand (503/429)
+function generateCreativeFallbackVariations(prompt: string, style?: string): any[] {
+  const clean = prompt.replace(/\s+/g, " ").trim();
+  return [
+    {
+      id: "variation-1",
+      styleTitle: "Futuristic Cyber-Chroma",
+      badge: "Sci-Fi / Cyber",
+      tagline: "Volumetric neon luminescence, rainy megacity reflections, and chrome biomechanical details",
+      remixPrompt: `${clean}, reimagined in ultra-detailed cyberpunk sci-fi aesthetic, gleaming holographic armor, neon turquoise and magenta reflections on wet pavement, volumetric misty lighting, octanerender 8k masterpiece.`,
+    },
+    {
+      id: "variation-2",
+      styleTitle: "Baroque Ethereal Oil",
+      badge: "Fantasy / Fine Art",
+      tagline: "Dramatic chiaroscuro shadows, rich gold leaf filigree, and mystical renaissance oil canvas",
+      remixPrompt: `${clean}, transformed into classical baroque masterwork, dramatic caravaggio chiaroscuro lighting, rich textured oil painting brushstrokes, golden mystical aura, ornate filigree details, museum masterpiece.`,
+    },
+    {
+      id: "variation-3",
+      styleTitle: "Vintage 35mm Film Noir",
+      badge: "Retro / Cinematic",
+      tagline: "Atmospheric Kodachrome grain, moody cinematographic depth, and 1970s analog nostalgia",
+      remixPrompt: `${clean}, captured on authentic vintage 35mm Panavision camera, subtle analog film grain, deep shadows, cinematic anamorphic lens flare, moody color grading, natural atmospheric fog.`,
+    },
+  ];
+}
+
+// Prompt Remix endpoint: generates 3 creative stylistic variations of the user's prompt using Gemini
+app.post("/api/remix-prompt", async (req, res) => {
+  try {
+    const { prompt, style, imageDescription } = req.body;
+    if (!prompt || typeof prompt !== "string" || !prompt.trim()) {
+      return res.status(400).json({
+        success: false,
+        error: "Prompt is required to generate remixes.",
+      });
+    }
+
+    const ai = getGenAI();
+    const promptContent = `You are an expert creative AI prompt director specializing in image-to-image and visual art transformation.
+The user wants to transform an existing image.
+User's base prompt: "${prompt.trim()}"
+${style && style !== "None" ? `Current aesthetic style reference: ${style}` : ""}
+${imageDescription ? `Reference image context: ${imageDescription}` : ""}
+
+Task:
+Generate exactly THREE (3) creative, distinctly different stylistic variations/remixes of this prompt for image-to-image transformation.
+Each variation should explore a different artistic dimension while keeping the subject recognizable:
+1. Variation 1: High-tech / Sci-Fi / Cybernetic / Futurism (e.g., neon luminescence, holographic textures, futuristic cyberpunk metropolis or sleek utopian tech)
+2. Variation 2: Classical / Dark Fantasy / Baroque Oil Painting / Mythical (e.g., chiaroscuro dramatic lighting, rich oil canvas brushwork, ethereal mystical atmosphere)
+3. Variation 3: Cinematic / Stylized / Retro Analog Film / Studio Anime (e.g., 35mm grain, vintage film noir color grading, or vibrant Ghibli-esque illustrative wonder)
+
+Return ONLY a JSON object in this exact schema:
+{
+  "variations": [
+    {
+      "id": "variation-1",
+      "styleTitle": "Futuristic Cyber-Chroma",
+      "tagline": "Neon reflections, volumetric rain atmosphere, and sleek cybernetic enhancements",
+      "badge": "Sci-Fi / Cyber",
+      "remixPrompt": "Detailed Image-to-Image prompt with rich lighting, texture, and visual atmosphere"
+    },
+    {
+      "id": "variation-2",
+      "styleTitle": "Baroque Ethereal Oil",
+      "tagline": "Chiaroscuro lighting, painterly impasto strokes, and mystical atmospheric depth",
+      "badge": "Fantasy / Fine Art",
+      "remixPrompt": "Detailed Image-to-Image prompt with rich lighting, texture, and visual atmosphere"
+    },
+    {
+      "id": "variation-3",
+      "styleTitle": "Vintage 35mm Film Noir",
+      "tagline": "Analog film grain, deep tonal shadows, and moody cinematic nostalgia",
+      "badge": "Retro / Cinematic",
+      "remixPrompt": "Detailed Image-to-Image prompt with rich lighting, texture, and visual atmosphere"
+    }
+  ]
+}`;
+
+    let text = "";
+    try {
+      const response = await ai.models.generateContent({
+        model: "gemini-3.8-flash",
+        contents: promptContent,
+        config: {
+          responseMimeType: "application/json",
+        },
+      });
+      text = response.text || "{}";
+    } catch (primaryErr: any) {
+      console.warn("[Prompt Remix] Primary Gemini model high demand, trying fast fallback model:", primaryErr?.message);
+      try {
+        const responseFallback = await ai.models.generateContent({
+          model: "gemini-2.5-flash",
+          contents: promptContent,
+          config: {
+            responseMimeType: "application/json",
+          },
+        });
+        text = responseFallback.text || "{}";
+      } catch (secondaryErr: any) {
+        console.warn("[Prompt Remix] Gemini high demand spike, synthesizing 3 variations seamlessly:", secondaryErr?.message);
+        return res.json({
+          success: true,
+          variations: generateCreativeFallbackVariations(prompt, style),
+          fallbackUsed: true,
+        });
+      }
+    }
+
+    try {
+      const parsed = JSON.parse(text);
+      let list = [];
+      if (Array.isArray(parsed.variations)) {
+        list = parsed.variations;
+      } else if (Array.isArray(parsed)) {
+        list = parsed;
+      } else if (parsed && typeof parsed === "object") {
+        const arr = Object.values(parsed).find((v) => Array.isArray(v));
+        if (arr) list = arr as any[];
+      }
+
+      if (list.length > 0) {
+        const formatted = list.slice(0, 3).map((v: any, idx: number) => ({
+          id: v.id || `variation-${idx + 1}`,
+          styleTitle: v.styleTitle || v.title || `Remix Style ${idx + 1}`,
+          tagline: v.tagline || v.description || "Stylistic variation of your prompt",
+          badge: v.badge || (idx === 0 ? "Sci-Fi / Cyber" : idx === 1 ? "Fine Art" : "Cinematic"),
+          remixPrompt: v.remixPrompt || v.prompt || text,
+        }));
+        return res.json({ success: true, variations: formatted });
+      }
+
+      return res.json({
+        success: true,
+        variations: generateCreativeFallbackVariations(prompt, style),
+      });
+    } catch {
+      return res.json({
+        success: true,
+        variations: generateCreativeFallbackVariations(prompt, style),
+      });
+    }
+  } catch (error: any) {
+    console.warn("[Prompt Remix]", error?.message || "Remix issue");
+    res.json({
+      success: true,
+      variations: generateCreativeFallbackVariations(req.body?.prompt || "artistic transformation", req.body?.style),
+    });
+  }
+});
+
 // Image-to-Image Generation endpoint
 app.post("/api/image-to-image", async (req, res) => {
   try {

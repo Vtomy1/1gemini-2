@@ -54,6 +54,14 @@ export interface GenerationHistoryItem {
   notes?: string;
 }
 
+export interface PromptRemixVariation {
+  id: string;
+  styleTitle: string;
+  tagline: string;
+  remixPrompt: string;
+  badge?: string;
+}
+
 export interface NeuralFilterConfig {
   brightness: number;
   contrast: number;

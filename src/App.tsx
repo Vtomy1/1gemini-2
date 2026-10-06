@@ -505,6 +505,8 @@ export default function App() {
                 engineMode={engineMode}
                 intensity={intensity}
                 onChangeIntensity={setIntensity}
+                imageDescription={analysisData?.summary}
+                onToast={showToast}
               />
 
               {/* Comparison & Result Viewer */}
